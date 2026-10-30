@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tasks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap">
+<style>
+  :root {
+    --bg: #e8eef3;
+    --surface: #f8fafc;
+    --ink: #14263a;
+    --muted: #5d7186;
+    --line: #c5d2de;
+    --accent: #2f6fed;
+    --accent-ink: #ffffff;
+    --danger: #c2362b;
+    --done: #8a9bac;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1a26; --surface: #17263636; --ink: #e6eef6; --muted: #92a6ba;
+      --line: #2a3d52; --accent: #6b9bff; --accent-ink: #0b1522; --danger: #ff7a6e; --done: #647a90;
+      --surface: #172636;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1a26; --surface: #172636; --ink: #e6eef6; --muted: #92a6ba;
+    --line: #2a3d52; --accent: #6b9bff; --accent-ink: #0b1522; --danger: #ff7a6e; --done: #647a90;
+    color-scheme: dark;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+    font-family: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; justify-content: center; padding: 48px 16px;
+  }
+  main { width: 100%; max-width: 520px; }
+  h1 { font-size: clamp(2.4rem, 8vw, 3.6rem); font-weight: 800; letter-spacing: -0.03em; margin: 0 0 4px; line-height: 1; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+
+  .add { display: flex; gap: 8px; }
+  input[type="text"] {
+    flex: 1; min-width: 0; font: inherit; font-size: 1.05rem; color: var(--ink);
+    background: var(--surface); border: 2px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  input[type="text"]::placeholder { color: var(--muted); }
+  button { font: inherit; cursor: pointer; }
+  .add button {
+    background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
+    padding: 0 20px; font-weight: 600;
+  }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  ul { list-style: none; margin: 20px 0 0; padding: 0; background: var(--surface); border: 2px solid var(--line); border-radius: 10px; }
+  li { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid var(--line); }
+  li:last-child { border-bottom: 0; }
+  li input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; flex: none; }
+  li span { flex: 1; overflow-wrap: anywhere; cursor: pointer; }
+  li.done span { color: var(--done); text-decoration: line-through; }
+  li .del {
+    background: none; border: 0; color: var(--muted); font-size: 1.3rem; line-height: 1;
+    padding: 4px 8px; border-radius: 6px;
+  }
+  li .del:hover { color: var(--danger); }
+  .empty { padding: 22px 14px; color: var(--muted); text-align: center; }
+
+  footer { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; color: var(--muted); font-size: .95rem; }
+  footer button { background: none; border: 0; color: var(--accent); font-weight: 600; padding: 4px 0; }
+  footer button[hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tasks</h1>
+  <p class="sub">Saved in this browser. Close the tab, come back, they’re still here.</p>
+
+  <div class="add">
+    <input id="taskInput" type="text" placeholder="What needs doing?" aria-label="New task" autocomplete="off" maxlength="200">
+    <button id="addBtn" type="button">Add task</button>
+  </div>
+
+  <ul id="list" aria-live="polite"></ul>
+
+  <footer>
+    <span id="count"></span>
+    <button id="clearBtn" type="button" hidden>Clear completed</button>
+  </footer>
+</main>
+
+<script>
+  // ---------- 1. STATE ----------
+  // The array is the single source of truth. The DOM is just a picture of it.
+  const STORAGE_KEY = "todo.tasks.v1";
+  let tasks = loadTasks();
+
+  // ---------- 2. STORAGE ----------
+  // localStorage only stores strings, so we convert with JSON.stringify / JSON.parse.
+  // try/catch covers blocked storage (private mode) and corrupted data.
+  function loadTasks() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function saveTasks() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    } catch (err) {
+      console.warn("Could not save tasks:", err);
+    }
+  }
+
+  // ---------- 3. DOM REFERENCES ----------
+  const input = document.getElementById("taskInput");
+  const addBtn = document.getElementById("addBtn");
+  const list = document.getElementById("list");
+  const count = document.getElementById("count");
+  const clearBtn = document.getElementById("clearBtn");
+
+  // ---------- 4. STATE CHANGES ----------
+  // Each action changes the array, saves it, then re-renders.
+  function addTask(text) {
+    const title = text.trim();
+    if (!title) return;
+    tasks.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: title, done: false });
+    saveTasks();
+    render();
+  }
+
+  function toggleTask(id) {
+    const task = tasks.find(t => t.id === id);
+    if (task) task.done = !task.done;
+    saveTasks();
+    render();
+  }
+
+  function deleteTask(id) {
+    tasks = tasks.filter(t => t.id !== id);
+    saveTasks();
+    render();
+  }
+
+  function clearCompleted() {
+    tasks = tasks.filter(t => !t.done);
+    saveTasks();
+    render();
+  }
+
+  // ---------- 5. RENDER ----------
+  // Build elements with textContent (not innerHTML) so user text can never inject HTML.
+  function render() {
+    list.innerHTML = "";
+
+    if (tasks.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "empty";
+      empty.textContent = "No tasks yet. Type one above and press Enter.";
+      list.appendChild(empty);
+    }
+
+    tasks.forEach(task => {
+      const li = document.createElement("li");
+      li.dataset.id = task.id;
+      if (task.done) li.classList.add("done");
+
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = task.done;
+      box.setAttribute("aria-label", "Mark “" + task.text + "” complete");
+
+      const label = document.createElement("span");
+      label.textContent = task.text;
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "del";
+      del.textContent = "×";
+      del.setAttribute("aria-label", "Delete “" + task.text + "”");
+
+      li.append(box, label, del);
+      list.appendChild(li);
+    });
+
+    const remaining = tasks.filter(t => !t.done).length;
+    count.textContent = tasks.length === 0 ? "" : remaining + (remaining === 1 ? " task left" : " tasks left");
+    clearBtn.hidden = !tasks.some(t => t.done);
+  }
+
+  // ---------- 6. EVENTS ----------
+  // Click the Add button...
+  addBtn.addEventListener("click", () => {
+    addTask(input.value);
+    input.value = "";
+    input.focus();
+  });
+
+  // ...or press Enter inside the input.
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addBtn.click();
+  });
+
+  // Event delegation: one listener on the <ul> handles every task,
+  // including ones that don’t exist yet. We find which one was clicked.
+  list.addEventListener("click", (e) => {
+    const li = e.target.closest("li[data-id]");
+    if (!li) return;
+    const id = li.dataset.id;
+
+    if (e.target.closest(".del")) {
+      deleteTask(id);
+    } else if (e.target.matches("input[type=checkbox]") || e.target.tagName === "SPAN") {
+      toggleTask(id);
+    }
+  });
+
+  clearBtn.addEventListener("click", clearCompleted);
+
+  // ---------- 7. START ----------
+  // On page load, draw whatever was saved last time.
+  render();
+</script>
+</body>
+</html>
